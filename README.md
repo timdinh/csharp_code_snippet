@@ -52,6 +52,71 @@ var letter = $"""
 ```
 
 # General dotnet 
+
+## Tasks
+Run tasks in parallels
+```
+var task1 = SomeTaskAsync();
+var task2 = AnotherTaskAsync();
+// await for both task to complete
+await Task.WhenAll(task1, task2);
+```
+Run task sequentially
+```
+await SomeTaskAsync();
+await AnotherTaskAsync();
+```
+Execute synchrous code using task
+```
+var task = Task.Run(() => {
+    // some code
+});
+
+await task;
+```
+using `TaskCompletionSource<T>`
+```
+class CustomerService : IRecipient<CustomerResultMessage>
+{
+    private TaskCompletionSource<Customer> _tcs;
+
+    public CustomerService()
+    {
+        WeakReferenceMessenger.Default.Register<CustomerResultMessage>(this);
+    }
+
+    public Task<Customer> GetCustomerAsync()
+    {
+        _tcs = new TaskCompletionSource<Customer>();
+        // send a message (note: set result when receive CustomerResultMessage)
+        WeakReferenceMessenger.Default.Send(new GetCustomerMessage(1));
+        return _tcs.Task;
+    }
+
+    public void Receive(CustomerResultMessage message)
+    {
+        _tcs.SetResult(message.Customer)
+    }
+}
+```
+```
+TaskCompletionSource<int> tcs = new ();
+
+// Start a separate task that simulates an asynchronous operation
+Task.Run(() =>
+{
+    Console.WriteLine("Task Thread ID: " + Thread.CurrentThread.ManagedThreadId);
+
+    // Simulate some work
+    Thread.Sleep(2000);
+
+    // Set the result of the task
+    tcs.SetResult(42);
+});
+
+// Await the task from TaskCompletionSource
+int result = await tcs.Task;
+```
 ## Send messages via `WeakReferenceMessenger`
 declare message
 ```
@@ -82,6 +147,15 @@ public sealed class MyReceiver : IRecipient<MyMessage>
         Console.WriteLine(message.Content);
     }
 }
+```
+
+## EF Core 
+Bulk update
+```
+// set all customers over 50 to inactive
+dbContext.Customers
+    .Where(x => x.Age > 50)
+    .ExecuteUpdate(x => x.SetProperty(p => p.Active, p => false));
 ```
 # Web
 
@@ -310,17 +384,17 @@ Log.Logger = new LoggerConfiguration()
 
 
 builder.Services.AddLogging(loggingBuilder =>
-		{
-			loggingBuilder.ClearProviders();
+    {
+        loggingBuilder.ClearProviders();
 #if DEBUG
-			loggingBuilder.AddDebug();
+        loggingBuilder.AddDebug();
 #endif
-			loggingBuilder.AddSerilog();
+        loggingBuilder.AddSerilog();
 
-			loggingBuilder.SetMinimumLevel(LogLevel.Debug);
-			loggingBuilder.AddFilter("Microsoft", LogLevel.Warning);
-			loggingBuilder.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
-		});
+        loggingBuilder.SetMinimumLevel(LogLevel.Debug);
+        loggingBuilder.AddFilter("Microsoft", LogLevel.Warning);
+        loggingBuilder.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+    });
 ```
 # Blazor
 ## Extension on `IJSRuntime`
