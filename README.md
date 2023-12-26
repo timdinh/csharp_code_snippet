@@ -37,10 +37,17 @@ string result = shape switch
     Circle c => $"Circle: ({c.X}, {c.Y}), radius {c.Radius}",
     _ => "Unknown shape"
 };
-// list (prior or dotnet 8)
+```
+# Collection
+```
+// prior to dotnet 8
 int[] numbers = { 1, 2, 3, 4, 5 };
-// list (from dotnet 8)
-int[] numbers = [ 1, 2, 3, 4, 5];
+
+// from dotnet 8
+int[] first = [ 1, 2, 3, 4, 5];
+int[] second = [6, 7];
+
+var both = [..first, ..second];
 ```
 # Raw String Literals
 ```
@@ -76,30 +83,6 @@ await task;
 ```
 using `TaskCompletionSource<T>`
 ```
-class CustomerService : IRecipient<CustomerResultMessage>
-{
-    private TaskCompletionSource<Customer> _tcs;
-
-    public CustomerService()
-    {
-        WeakReferenceMessenger.Default.Register<CustomerResultMessage>(this);
-    }
-
-    public Task<Customer> GetCustomerAsync()
-    {
-        _tcs = new TaskCompletionSource<Customer>();
-        // send a message (note: set result when receive CustomerResultMessage)
-        WeakReferenceMessenger.Default.Send(new GetCustomerMessage(1));
-        return _tcs.Task;
-    }
-
-    public void Receive(CustomerResultMessage message)
-    {
-        _tcs.SetResult(message.Customer)
-    }
-}
-```
-```
 TaskCompletionSource<int> tcs = new ();
 
 // Start a separate task that simulates an asynchronous operation
@@ -117,6 +100,43 @@ Task.Run(() =>
 // Await the task from TaskCompletionSource
 int result = await tcs.Task;
 ```
+using `CancellationToken`
+```
+sealed class SomeService
+{
+    private TaskCompletionSource<int> _tcs;
+    private CancellationToken _token;
+
+    public Task<int> DoSomethingAsync(CancellationToken token)
+    {
+        _tcs = new TaskCompletionSource<int>();
+        _token = token;
+        // run something in background
+        Task.Run(MyAction);
+        return _tcs.Task;
+    }
+
+    public void MyAction()
+    {
+        for(var i = 0; i<1000000; i++)
+        {
+            // do something
+            Thread.Sleep(10);
+            _token.ThrowIfCancellationRequested();
+        }
+        // set the result 
+        _tcs.SetResult(100);
+    }
+}
+
+// usage (create service, run task and cancel it after 1 second)
+var s = new SomeService();
+var cancellationTokenSource = new CancellationTokenSource();
+var task = s.DoSomethingAsync(cancellationTokenSource.Token);
+await Task.Delay(1000);
+cancellationTokenSource.Cancel(); // OperationCanceledException would occurred here
+```
+
 ## Send messages via `WeakReferenceMessenger`
 declare message
 ```
@@ -201,9 +221,9 @@ var app = builder.Build();
 app.UseExceptionHandler();
 ```
 
-## prior to dotnet 8 via middleware
+## prior to dotnet 8 via convention based middleware
 ```
-public class GlobalExceptionHandlerMiddleware
+public sealed class GlobalExceptionHandlerMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionHandlerMiddleware> _logger;
@@ -220,26 +240,65 @@ public class GlobalExceptionHandlerMiddleware
     {
         try
         {
+            // execute code before request
+
             await _next(context);
+
+            // execute code after request
         }
         catch (Exception ex)
         {
             // Handle exceptions here
-            await HandleExceptionAsync(context, ex);
+            logger.LogError(ex, "Unhandled error");
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync("{ code = 123, error = \"server error\" }");
         }
-    }
-
-    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
-    {
-        logger.LogError(exception, "Unhandled error");
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync("{ code = 123, error = \"server error\" }");
     }
 }
 ```
+register
+```
+app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+```
 
-## prior to dotnet 8 
+## prior to dotnet 8 via Factory based middleware
+```
+public sealed class GlobalExceptionHandlerMiddleware : IMiddleware
+{
+    private readonly ILogger<GlobalExceptionHandlerMiddleware> _logger;
+
+    public GlobalExceptionHandlerMiddleware(ILogger<GlobalExceptionHandlerMiddleware> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+    {
+        try
+        {
+            // execute code before request
+
+            await next(context);
+
+            // execute code after request
+        }
+        catch (Exception ex)
+        {
+            // Handle exceptions here
+            logger.LogError(ex, "Unhandled error");
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync("{ code = 123, error = \"server error\" }");
+        }
+    }
+}
+```
+register
+```
+app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+```
+## prior to dotnet 8 via request delegate based middleware
 ```
 app.UseExceptionHandler(errorApp =>
     {
