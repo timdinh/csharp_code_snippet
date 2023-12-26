@@ -51,6 +51,38 @@ var letter = $"""
               """;
 ```
 
+# General dotnet 
+## Send messages via `WeakReferenceMessenger`
+declare message
+```
+record MyMessage(string Content);
+```
+send
+```
+WeakReferenceMessenger.Default.Send(new MyMessage("Helo"));
+```
+Receiving by register a closure
+```
+WeakReferenceMessenger.Default.Register<MyMessage>(this, async (receipient, message) =>
+{
+    Console.WriteLine(message.Content);
+});
+```
+or register with class
+```
+public sealed class MyReceiver : IRecipient<MyMessage>
+{
+    public MyReceiver() 
+    {
+        WeakReferenceMessenger.Default.Register<MyMessage>(this);
+    }
+
+    public void Receive(MyMessage message)
+    {
+        Console.WriteLine(message.Content);
+    }
+}
+```
 # Web
 
 ## dotnet 8 Global exception handler 
@@ -174,6 +206,37 @@ app.UseEndpoints(endpoints =>
     });
 ```
 
+## rate limit
+
+```
+builder.Services.AddRateLimiter(ConfigureRateLimiterOptions);
+var app = builder.Build();
+app.UseRateLimiter();
+
+private void ConfigureRateLimiterOptions(RateLimiterOptions rlo)
+{
+    rlo.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // allow 200 requests per minute from each IP address and accumulate up to 1000 tokens
+    rlo.AddPolicy("default", httpContext => RateLimitPartition.GetTokenBucketLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString(), 
+        factory: _ => new TokenBucketRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            TokenLimit = 1000,
+            ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+            TokensPerPeriod = 200
+        }));
+
+    rlo.AddConcurrencyLimiter("concurrency_1", opt =>
+    {
+        opt.PermitLimit = 1;
+        opt.QueueLimit = 1;
+        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
+}
+```
+
 # Xamarin Forms
 ## Using `CommandFactory`
 Can handle multile execution (i.e double clicks, re-entry) and centralise exception handling
@@ -220,4 +283,62 @@ public sealed class ViewModel
 }
 ```
 
+# dotnet MAUI
+## Send logs to HTTP endpoint via serialog
+```
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+    .Enrich.WithExceptionData()
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("device",
+        new
+        {
+            Platform = DeviceInfo.Current.Platform.ToString(),
+            Model = DeviceInfo.Current.Model,
+            Manufacturer = DeviceInfo.Current.Manufacturer,
+            Name = DeviceInfo.Current.Name,
+            AppVersion = VersionTracking.CurrentVersion,
+            AppBuild = VersionTracking.CurrentBuild
+        }, true)
+    .WriteTo.DurableHttpUsingFileSizeRolledBuffers(
+        requestUri: "https://some.server.net/logs/app-name/key",
+        bufferBaseFileName: Path.Combine(FileSystem.Current.CacheDirectory, "log_buffer"),
+        bufferFileSizeLimitBytes: 10_000_000L,
+        period: TimeSpan.FromSeconds(5))
+    .CreateLogger();
+
+
+builder.Services.AddLogging(loggingBuilder =>
+		{
+			loggingBuilder.ClearProviders();
+#if DEBUG
+			loggingBuilder.AddDebug();
+#endif
+			loggingBuilder.AddSerilog();
+
+			loggingBuilder.SetMinimumLevel(LogLevel.Debug);
+			loggingBuilder.AddFilter("Microsoft", LogLevel.Warning);
+			loggingBuilder.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+		});
+```
 # Blazor
+## Extension on `IJSRuntime`
+```
+public static class IJSRuntimeExtensions
+{
+    /// <summary> Navigate back </summary>
+    public static ValueTask NavigateBack(this IJSRuntime jsRuntime)
+        => jsRuntime.InvokeVoidAsync("history.back");
+
+    /// <summary> log to browser console </summary>
+    public static ValueTask ConsoleLog(this IJSRuntime js, string message)
+        => js.InvokeVoidAsync("console.log", message);
+}
+```
+usage
+```
+@inject IJSRuntime JS
+JS.ConsoleLog("Hello");
+JS.NavigateBack();
+```
