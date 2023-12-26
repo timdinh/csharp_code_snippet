@@ -13,7 +13,32 @@ Var bob2 = alice with { }
 var alice2 = new Person ("Alice", 30);
 Console.WriteLine(alice == alice2); // Output: True (values are equal)
 ```
+## Service class
+```
+namespace XYZ;
 
+public sealed class MyService
+{
+    public MyService(ILogger<MyService> logger)
+    {
+        _logger = logger;
+    }
+
+    private readonly ILogger _logger;
+
+    public void MyAction() 
+    {
+        try 
+        {
+            _logger.LogDebug("My Action called");
+        }
+        catch(Exception ex)
+        {
+            ExceptionHelper.Log(ex);
+        }
+    }
+}
+```
 ## Pattern Matching
 ```
 // is expression
@@ -474,4 +499,73 @@ usage
 @inject IJSRuntime JS
 JS.ConsoleLog("Hello");
 JS.NavigateBack();
+```
+
+## HTML 5 
+```
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Title</title>
+    <!-- Add your CSS links here -->
+    <!-- <link rel="stylesheet" href="styles.css"> -->
+</head>
+<body>
+    <!-- Your content goes here -->
+
+    <!-- Add your JavaScript links here -->
+    <!-- <script src="script.js"></script> -->
+</body>
+</html>
+```
+
+## razor component
+```
+@page "/mypage/{Id}"
+@page "/anotherPath"
+
+@layout StandardPageLayout
+
+@inject ILogger<MyPage> Logger
+@inject IJSRuntime JS
+@inject NavigationManager NM
+
+<div>
+</div>
+
+@code {
+
+    [Parameter]
+    public string Id { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            await base.OnInitializedAsync();
+        }
+        catch(Exception ex)
+        {
+            ExceptionHelper.Log(ex);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        try 
+        {
+            if (first)
+            {
+
+            }
+            await base.OnAfterRenderAsync(first);
+        }
+        catch(Exception ex)
+        {
+            ExceptionHelper.Log(ex);
+        }
+    }
+}
 ```
